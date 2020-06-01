@@ -1,4 +1,4 @@
-// Copyright 2018 Sen Han 00hnes@gmail.com
+// Copyright 2018 Sen Han <00hnes@gmail.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,15 +34,17 @@ extern "C" {
 
 #define ACO_VERSION_MAJOR 1
 #define ACO_VERSION_MINOR 2
-#define ACO_VERSION_PATCH 2
+#define ACO_VERSION_PATCH 4
 
 #ifdef __i386__
     #define ACO_REG_IDX_RETADDR 0
     #define ACO_REG_IDX_SP 1
+    #define ACO_REG_IDX_BP 2
     #define ACO_REG_IDX_FPU 6
 #elif __x86_64__
     #define ACO_REG_IDX_RETADDR 4
     #define ACO_REG_IDX_SP 5
+    #define ACO_REG_IDX_BP 7
     #define ACO_REG_IDX_FPU 8
 #else
     #error "platform no support yet"
@@ -134,19 +136,36 @@ struct aco_s{
     }   \
 } while(0)
 
-extern void aco_runtime_test();
+#if defined(aco_attr_no_asan)
+    #error "aco_attr_no_asan already defined"
+#endif
+#if defined(ACO_USE_ASAN)
+    #if defined(__has_feature)
+        #if __has_feature(__address_sanitizer__)
+            #define aco_attr_no_asan \
+                __attribute__((__no_sanitize_address__))
+        #endif
+    #endif
+    #if defined(__SANITIZE_ADDRESS__) && !defined(aco_attr_no_asan)
+        #define aco_attr_no_asan \
+            __attribute__((__no_sanitize_address__))
+    #endif
+#endif
+#ifndef aco_attr_no_asan
+    #define aco_attr_no_asan
+#endif
+
+extern void aco_runtime_test(void);
 
 extern void aco_thread_init(aco_cofuncp_t last_word_co_fp);
 
-// TODO: plan to use regparm(0) (fastcall) in Sys V ABI intel386
-// to accelerate acosw and copystack(-8bytes), and PR is welcome :)
-extern void* acosw(aco_t* from_co, aco_t* to_co); // asm
+extern void* acosw(aco_t* from_co, aco_t* to_co) __asm__("acosw"); // asm
 
-extern void aco_save_fpucw_mxcsr(void* p);  // asm
+extern void aco_save_fpucw_mxcsr(void* p) __asm__("aco_save_fpucw_mxcsr");  // asm
 
-extern void aco_funcp_protector_asm(); // asm
+extern void aco_funcp_protector_asm(void) __asm__("aco_funcp_protector_asm"); // asm
 
-extern void aco_funcp_protector();
+extern void aco_funcp_protector(void);
 
 extern aco_share_stack_t* aco_share_stack_new(size_t sz);
 
@@ -164,7 +183,11 @@ extern aco_t* aco_create(
 // aco's Global Thread Local Storage variable `co`
 extern __thread aco_t* aco_gtls_co;
 
+aco_attr_no_asan
 extern void aco_resume(aco_t* resume_co);
+
+aco_attr_no_asan
+void aco_yield_to(aco_t* resume_co);
 
 //extern void aco_yield1(aco_t* yield_co);
 #define aco_yield1(yield_co) do {             \

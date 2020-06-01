@@ -1,4 +1,4 @@
-# Copyright 2018 Sen Han 00hnes@gmail.com
+# Copyright 2018 Sen Han <00hnes@gmail.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,13 @@
 
 OUTPUT_DIR="./output"
 CFLAGS="-g -O2 -Wall -Werror"
-EXTRA_CFLAGS=""
+#EXTRA_CFLAGS=""
 OUTPUT_SUFFIX=""
-CC="cc"
+makecc="cc"
+if [ "$CC" ]
+then
+    makecc="$CC"
+fi
 
 app_list='''
 test_aco_tutorial_0
@@ -26,6 +30,7 @@ test_aco_tutorial_3 -lpthread
 test_aco_tutorial_4
 test_aco_tutorial_5
 test_aco_tutorial_6
+test_aco_tutorial_7
 test_aco_synopsis
 test_aco_benchmark
 '''
@@ -39,7 +44,7 @@ OUTPUT_DIR=`dirname "$OUTPUT_DIR"`
 gl_trap_str=""
 
 function error(){
-    echo "error: $*" > /proc/self/fd/2
+    >&2 echo "error: $*"
 }
 
 function assert(){
@@ -67,10 +72,11 @@ function build_f(){
     declare build_cmd
     declare tmp_ret
     declare skip_flag
-    echo "OUTPUT_DIR:    $OUTPUT_DIR"
-    echo "CFLAGS:        $CFLAGS"
-    echo "EXTRA_CFLAGS:  $EXTRA_CFLAGS"
-    echo "OUTPUT_SUFFIX: $OUTPUT_SUFFIX"
+    echo "OUTPUT_DIR:       $OUTPUT_DIR"
+    echo "CFLAGS:           $CFLAGS"
+    echo "EXTRA_CFLAGS:     $EXTRA_CFLAGS"
+    echo "ACO_EXTRA_CFLAGS: $ACO_EXTRA_CFLAGS"
+    echo "OUTPUT_SUFFIX:    $OUTPUT_SUFFIX"
     echo "$app_list" | grep -Po '.+$' | while read read_in
     do
         file=`echo $read_in | grep -Po "^[^\s]+"`
@@ -80,7 +86,7 @@ function build_f(){
             continue  
         fi
         #echo "<$file>:<$cflags>:$OUTPUT_DIR:$CFLAGS:$EXTRA_CFLAGS:$OUTPUT_SUFFIX"
-        build_cmd="$CC $CFLAGS $EXTRA_CFLAGS acosw.S aco.c $file.c $cflags -o $OUTPUT_DIR/$file$OUTPUT_SUFFIX"
+        build_cmd="$makecc $CFLAGS $ACO_EXTRA_CFLAGS $EXTRA_CFLAGS acosw.S aco.c $file.c $cflags -o $OUTPUT_DIR/$file$OUTPUT_SUFFIX"
         skip_flag=""
         if [ "$gl_opt_no_m32" ]
         then
@@ -173,23 +179,37 @@ shift $((OPTIND-1))
 #echo "gl_opt_no_valgrind:$gl_opt_no_valgrind"
 #echo "gl_opt_no_m32:$gl_opt_no_m32"
 
+if [ -e "$OUTPUT_DIR" ]
+then
+    if [ -d "$OUTPUT_DIR" ]
+    then
+        :
+    else
+        error "\"$OUTPUT_DIR\" is not a directory"
+        exit 1
+    fi
+else
+    error "directory \"$OUTPUT_DIR\" doesn't exist"
+    exit 1
+fi
+
 tra "echo;echo build has been interrupted"
 
 # the matrix of the build config for later testing
 # -m32 -DACO_CONFIG_SHARE_FPU_MXCSR_ENV -DACO_USE_VALGRIND
 # 0 0 0
-EXTRA_CFLAGS="" OUTPUT_SUFFIX="..no_valgrind.standaloneFPUenv" build_f
+ACO_EXTRA_CFLAGS="" OUTPUT_SUFFIX="..no_valgrind.standaloneFPUenv" build_f
 # 0 0 1
-EXTRA_CFLAGS="-DACO_USE_VALGRIND" OUTPUT_SUFFIX="..valgrind.standaloneFPUenv" build_f
+ACO_EXTRA_CFLAGS="-DACO_USE_VALGRIND" OUTPUT_SUFFIX="..valgrind.standaloneFPUenv" build_f
 # 0 1 0
-EXTRA_CFLAGS="-DACO_CONFIG_SHARE_FPU_MXCSR_ENV" OUTPUT_SUFFIX="..no_valgrind.shareFPUenv" build_f
+ACO_EXTRA_CFLAGS="-DACO_CONFIG_SHARE_FPU_MXCSR_ENV" OUTPUT_SUFFIX="..no_valgrind.shareFPUenv" build_f
 # 0 1 1
-EXTRA_CFLAGS="-DACO_CONFIG_SHARE_FPU_MXCSR_ENV -DACO_USE_VALGRIND" OUTPUT_SUFFIX="..valgrind.shareFPUenv" build_f
+ACO_EXTRA_CFLAGS="-DACO_CONFIG_SHARE_FPU_MXCSR_ENV -DACO_USE_VALGRIND" OUTPUT_SUFFIX="..valgrind.shareFPUenv" build_f
 # 1 0 0
-EXTRA_CFLAGS="-m32" OUTPUT_SUFFIX="..m32.no_valgrind.standaloneFPUenv" build_f
+ACO_EXTRA_CFLAGS="-m32" OUTPUT_SUFFIX="..m32.no_valgrind.standaloneFPUenv" build_f
 # 1 0 1
-EXTRA_CFLAGS="-m32 -DACO_USE_VALGRIND" OUTPUT_SUFFIX="..m32.valgrind.standaloneFPUenv" build_f
+ACO_EXTRA_CFLAGS="-m32 -DACO_USE_VALGRIND" OUTPUT_SUFFIX="..m32.valgrind.standaloneFPUenv" build_f
 # 1 1 0
-EXTRA_CFLAGS="-m32 -DACO_CONFIG_SHARE_FPU_MXCSR_ENV" OUTPUT_SUFFIX="..m32.no_valgrind.shareFPUenv" build_f
+ACO_EXTRA_CFLAGS="-m32 -DACO_CONFIG_SHARE_FPU_MXCSR_ENV" OUTPUT_SUFFIX="..m32.no_valgrind.shareFPUenv" build_f
 # 1 1 1
-EXTRA_CFLAGS="-m32 -DACO_CONFIG_SHARE_FPU_MXCSR_ENV -DACO_USE_VALGRIND" OUTPUT_SUFFIX="..m32.valgrind.shareFPUenv" build_f
+ACO_EXTRA_CFLAGS="-m32 -DACO_CONFIG_SHARE_FPU_MXCSR_ENV -DACO_USE_VALGRIND" OUTPUT_SUFFIX="..m32.valgrind.shareFPUenv" build_f

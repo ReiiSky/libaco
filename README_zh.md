@@ -1,32 +1,31 @@
 # Name
+ 
+libaco - 一个极速的、轻量级、C语言非对称协程库。
 
-libaco - A blazing fast and lightweight C asymmetric coroutine library.
+这个项目的代号是Arkenstone 💎
 
-The code name of this project is Arkenstone 💎
+Asymmetric COroutine 和 Arkenstone 是 aco 的名称来源。
 
-Asymmetric COroutine & Arkenstone is the reason why it's been named `aco`.
+当前支持Sys V ABI Intel386和Sys V ABI x86-64。
 
-Currently supports Sys V ABI of Intel386 and x86-64.
+下面是这个项目的简要介绍：
 
-Here is a brief summary of this project:
+- 除了一个生产级别的C协程库实现，还包含了一个详细的文档描述了如何实现一个 *最快且正确* 的协程库以及其严格的数学证明；
+- 核心实现不超过 *700* 行代码，但包含了一个协程库应该有的全部功能；
+- 在AWS c5d.large机器上的性能测试结果指出，一次协程间上下文切换仅耗时 *10 ns* （独立执行栈）；
+- 用户在创建新的协程时，可以选择其拥有一个独占的执行栈，或者是与其它任意数量的协程一起共享一个执行栈；
+- 拥有极致的内存使用效率：一千万个协程并发执行仅消耗2.8GB的物理内存（tcmalloc，每一个协程使用120B的复制栈）。
 
-- Along with the implementation of a production-ready C coroutine library, here is a detailed documentation about how to implement a *fastest* and *correct* coroutine library and also with a strict [mathematical proof](#proof-of-correctness);
-- It has no more than 700 LOC but has the full functionality which you may want from a coroutine library;
-- The [benchmark](#benchmark) part shows that a context switch between coroutines only takes about *10 ns* (in the case of standalone stack) on the AWS c5d.large machine;
-- User could choose to create a new coroutine with a *standalone stack* or with a *shared stack* (could be shared with others);
-- It is extremely memory efficient: *10,000,000* coroutines simultaneously to run cost only *2.8 GB* physical memory (run with tcmalloc, each coroutine has a *120B* copy-stack size configuration).
-
-The phrase "*fastest*" in above means the fastest context switching implementation which complies to the Sys V ABI of Intel386 or AMD64.
+上文中的"最快"指的是在满足Sys V ABI Intel386或者AMD64约束下最快的上下文切换实现。
 
 [![Build Status Travis](https://img.shields.io/travis/hnes/libaco.svg?style=flat-square&&branch=master)](https://travis-ci.org/hnes/libaco)
 [![Releases](https://img.shields.io/github/release/hnes/libaco/all.svg?style=flat-square)](https://github.com/hnes/libaco/releases)
 [![LICENSE](https://img.shields.io/github/license/hnes/libaco.svg?style=flat-square)](https://github.com/hnes/libaco/blob/master/LICENSE)
-[![中文文档](https://img.shields.io/badge/doc-en%20+%20中文-blue.svg?style=flat-square)](https://github.com/hnes/libaco/blob/master/README_zh.md)
 [![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/intent/tweet?text=libaco+-+A+blazing+fast+and+lightweight+C+asymmetric+coroutine+library&url=https://github.com/hnes/libaco&via=00hnes)
 
-Issues and PRs are welcome 🎉🎉🎉
+热烈欢迎Issues和PRs 🎉🎉🎉
 
-Note: Please use [releases][github-release] instead of the `master` to build the final binary.
+注意: 请使用Release而非Master分支进行最终的二进制程序构建。
 
 [github-release]: https://github.com/hnes/libaco/releases
 
@@ -50,7 +49,6 @@ Note: Please use [releases][github-release] instead of the `master` to build the
       * [aco_create](#aco_create)
       * [aco_resume](#aco_resume)
       * [aco_yield](#aco_yield)
-      * [aco_yield_to](#aco_yield_to)
       * [aco_get_co](#aco_get_co)
       * [aco_get_arg](#aco_get_arg)
       * [aco_exit](#aco_exit)
@@ -71,7 +69,7 @@ Note: Please use [releases][github-release] instead of the `master` to build the
 
 # Status
 
-Production ready.
+可以用于生产环境。
 
 # Synopsis
 
@@ -162,33 +160,33 @@ $ gcc -g -D ACO_USE_VALGRIND -O2 acosw.S aco.c test_aco_synopsis.c -o test_aco_s
 $ valgrind --leak-check=full --tool=memcheck ./test_aco_synopsis
 ```
 
-For more information you may refer to the "[Build and Test](#build-and-test)" part.
+关于构建的更多信息请查阅"[Build and Test](#build-and-test)"部分。
 
 # Description
 
 ![thread_model_0](img/thread_model_0.png)
 
-There are 4 basic elements of an ordinary execution state: `{cpu_registers, code, heap, stack}`.
+一个用户空间的执行状态（一般为OS线程）有四个基本要素:`{cpu_registers, code, heap, stack}`。
 
-Since the code information is indicated by `({E|R})?IP` register, and the address of the memory allocated from heap is normally stored in the stack directly or indirectly, thus we could simplify the 4 elements into only 2 of them: `{cpu_registers, stack}`.
+由于二进制程序的代码执行位置信息由`({E|R})?IP`寄存器决定，且从堆中分配出的内存地址信息一般会间接或者直接的保存在运行栈中，所以，我们可以将这个四个元素最终化简为`{cpu_registers, stack}`。
 
 ![thread_model_1](img/thread_model_1.png)
 
-We define the `main co` as the coroutine who monopolizes the default stack of the current thread. And since the main co is the only user of this stack, we only need to save/restore the necessary cpu registers' state of the main co when it's been yielded-from/resumed-to (switched-out/switched-in).
+我们定义`main co`（主协程）为独占使用当前运行线程默认执行栈的协程。由于main co是这个执行栈的唯一用户，所以，在与main co相关的协程上下文切换中，我们仅需要对main co的某些必须的寄存器进行保存和恢复即可。
 
-Next, the definition of the `non-main co` is the coroutine whose execution stack is a stack which is not the default stack of the current thread and may be shared with the other non-main co. Thus the non-main co must have a `private save stack` memory buffer to save/restore its execution stack when it is been switched-out/switched-in (because the succeeding/preceding co may would/had use/used the share stack as its execution stack).
+接着，我们定义`non-main co`（非主协程）为执行栈不是当前运行线程默认执行栈（而是它自己创建的，且有可能会与其他non-main co一起共享这个执行栈）的协程。所以，`non-main co`会有一个私有的保存栈，当它被切换进来（或者切换出去）时，会使用它的私有保存栈进行执行栈的恢复（或者保存），因为当它被切换进来（或者切换出去）时，之前的（或者之后的）运行协程可能已经使用了（或者可能将会使用）这个执行栈（在libaco实现中，私有保存栈的保存策略是惰性的最优方案，具体请参见aco_resume的源码实现细节）。
 
 ![thread_model_2](img/thread_model_2.png)
 
-There is a special case of non-main co, that is `standalone non-main co` what we called in libaco: the share stack of the non-main coroutine has only one co user. Thus there is no need to do saving/restoring stuff of its private save stack when it is been switched-out/switched-in since there is no other co will touch the execution stack of the standalone non-main co except itself.
+这是一个non-main co的特殊情况，在libaco中我们称之为`standalone non-main co`（独立非主协程），即独占一个执行栈的非主协程。在与standalone non-main co相关的上下文切换中，对其只需要进行一些必须寄存器的保存或恢复即可（因为它的执行栈是独占的，在它被切换出的时间里，它的执行栈的状态是不变的）。
 
 ![thread_model_3](img/thread_model_3.png)
 
-Finally, we get the big picture of libaco.
+最终，我们得到了libaco的全局鸟瞰图。
 
-There is a "[Proof of Correctness](#proof-of-correctness)" part you may find really helpful if you want to dive into the internal of libaco or want to implement your own coroutine library.
+如果你想要实现自己的协程库或者更加深入的了解libaco的实现，"[Proof of Correctness](#proof-of-correctness)" 部分将会非常有用。
 
-It is also highly recommended to read the source code of the tutorials and benchmark next. The [benchmark](#benchmark) result is very impressive and enlightening too.
+接下来，可以阅读[教程](#tutorials)或者性能测试部分。[性能测试的报告](#benchmark)令人印象深刻同时发人深省。
 
 # Build and Test
 
@@ -196,30 +194,24 @@ It is also highly recommended to read the source code of the tutorials and bench
 
 * `-m32`
 
-The `-m32` option of gcc could help you to build the i386 application of libaco on a x86_64 machine. 
+编译器选项`-m32`能够帮助用户在AMD64平台上构建libaco的i386二进制程序。
 
 * C macro: `ACO_CONFIG_SHARE_FPU_MXCSR_ENV`
 
-You could define the global C macro `ACO_CONFIG_SHARE_FPU_MXCSR_ENV` to speed up the performance of context switching between coroutines slightly if none of your code would change the control words of FPU and MXCSR. If the macro is not defined, all the co would maintain its own copy of the FPU and MXCSR control words. It is recommended to always define this macro globally since it is very rare that one function needs to set its own special env of FPU or MXCSR instead of using the default env defined by the ISO C. But you may not need to define this macro if you are not sure of it.
+如果用户的程序在运行期间不会更改FPU和MXCSR的控制字，那么可以选择定义全局C宏 `ACO_CONFIG_SHARE_FPU_MXCSR_ENV` 以轻微地加快协程间上下文切换的速度。如果该宏没有被定义，每一个协程将会维护一份属于自己的独立FPU和MXCSR控制字环境。由于更改FPU或者MXCSR控制字的应用代码是非常少见的，用户可以选择总是全局定义该宏，但是如果并不能保证这个约束，用户应该选择不定义该宏。
 
 * C macro:`ACO_USE_VALGRIND`
 
-If you want to use the tool memcheck of valgrind to test the application, then you may need to define the global C macro `ACO_USE_VALGRIND` to enable the friendly support of valgrind in libaco. But it is not recommended to define this macro in the final release build for the performance reason. You may also need to install the valgrind headers (package name is "valgrind-devel" in centos for example) to build libaco application with C macro `ACO_USE_VALGRIND` defined. (The memcheck of valgrind only works well with the standalone co currently. In the case of the shared stack used by more than one non-main co, the memcheck of valgrind would generate many false positive reports. For more information you may refer to "[test_aco_tutorial_6.c](test_aco_tutorial_6.c)".)
-
-* C macro:`ACO_USE_ASAN`
-
-The global C macro `ACO_USE_ASAN` would enable the friendly support of [Address Sanitizer](https://en.wikipedia.org/wiki/AddressSanitizer) in libaco (support both gcc and clang).
+如果用户想要使用valgrind的memcheck工具对libaco的应用程序进行测试，则需要在构建时定义全局C宏 `ACO_USE_VALGRIND` 以使能libaco对valgrind memcheck时的支持。 由于性能的原因，在最终的生产二进制构建中并不推荐使用此宏。在全局定义了此宏的libaco应用构建之前，用户需要安转valgrind的C头文件（以Centos为例，这个开发包的名称为"valgrind-devel"）。valgrind的memcheck现在只支持拥有独立运行栈的协程，memcheck在对使用共享栈的协程进行检测时会输出很多的误报。更多的信息可以查看"[test_aco_tutorial_6.c](test_aco_tutorial_6.c)"。
 
 ## Build
-
-To build the test suites of libaco:
 
 ```bash
 $ mkdir output
 $ bash make.sh
 ```
 
-There is also some detailed options in make.sh:
+make.sh脚本中有一些更加详细的构建参数：
 
 ```bash
 $bash make.sh -h
@@ -236,14 +228,7 @@ Example:
     bash make.sh -o no-valgrind -o no-m32
 ```
 
-In short, using `-o no-valgrind ` if you have no valgrind headers installed, `-o no-m32` if you have no 32-bit gcc development tools installed on a AMD64 host.
-
-On MacOS, you need to [replace](https://apple.stackexchange.com/questions/69223/how-to-replace-mac-os-x-utilities-with-gnu-core-utilities) the default `sed` and `grep` commands of MacOS with the GNU `sed` and `grep` to run `make.sh` and `test.sh` (such requirement would be removed in the future):
-
-```bash
-$ brew install grep --with-default-names
-$ brew install gnu-sed --with-default-names
-```
+简而言之，如果系统中没有valgrind的C头文件，可以选择使用参数 `-o no-valgrind `进行测试集的构建；如果系统为AMD64平台并且没有安装32位的C编译器开发工具链，可以选择使用参数 `-o no-m32` 进行测试集的构建。
 
 ## Test
 
@@ -254,27 +239,27 @@ $ bash ../test.sh
 
 # Tutorials
 
-The `test_aco_tutorial_0.c` in this repository shows the basic usage of libaco. There is only one main co and one standalone non-main co in this tutorial. The comments in the source code is also very helpful.
+文件`test_aco_tutorial_0.c`中包含了libaco的基本使用示例。在这个示例中，只包含了一个 main co 和一个 standalone non-main co，另外，代码中的注释也很有用。
 
-The `test_aco_tutorial_1.c` shows the usage of some statistics of non-main co. The data structure of `aco_t` is very clear and is defined in `aco.h`.
+文件`test_aco_tutorial_1.c`中包含了libaco协程的运行统计信息的使用示例。类型`aco_t`的定义在`aco.h`中并且清晰易懂。
 
-There are one main co, one standalone non-main co and two non-main co (pointing to the same share stack) in `test_aco_tutorial_2.c`.
+在文件`test_aco_tutorial_2.c`中，包含了一个standalone non-main co和两个共享同一个执行栈的non-main co。
 
-The `test_aco_tutorial_3.c` shows how to use libaco in a multithreaded process. Basically, one instance of libaco is designed only to work inside one certain thread to gain the maximum performance of context switching between coroutines. If you want to use libaco in multithreaded environment, simply to create one instance of libaco in each of the threads. There is no data-sharing across threads inside the libaco, and you have to deal with the data competition among multiple threads yourself (like what `gl_race_aco_yield_ct` does in this tutorial).
+文件`test_aco_tutorial_3.c`展示了如何在多线程环境中使用libaco。从根本上讲，为了获得最好的协程间上下文切换性能，在设计时一个libaco的运行实例应该仅仅工作在一个固定的线程中。这样，如果你想在多线程中使用libaco，只需要分别在各个线程中像在单线程中那样使用libaco一样使用它即可。在libaco内部没有任何的线程间数据共享；在多线程场景下，用户需要自己处理好自己的数据竞争问题（就像此实例中`gl_race_aco_yield_ct`线程间共享变量做的那样）。
 
-One of the rules in libaco is to call `aco_exit()` to terminate the execution of the non-main co instead of the default direct C style `return`, otherwise libaco will treat such behaviour as illegal and trigger the default protector whose job is to log the error information about the offending co to stderr and abort the process immediately. The `test_aco_tutorial_4.c` shows such "offending co" situation.
+在libaco中，请调用API `aco_exit()`来进行终结non-main co的执行，而不要直接使用默认的C关键字`return`进行返回（否则libaco会将这种行为当做异常事件并触发默认的protector流程：输出错误信息至stderr并立即调用`abort`来终结进程的执行）。源文件`test_aco_tutorial_4.c`中示范了一个违背了此规则的协程实例。
 
-You could also define your own protector to substitute the default one (to do some customized "last words" stuff). But no matter in what case, the process will be aborted after the protector was executed. The `test_aco_tutorial_5.c` shows how to define the customized last word function.
+同时，用户也可以选择定制自己想要的protector处理逻辑（比如去做一些自定义的"last words"即“遗嘱”任务)。但是无论如何，当protector被执行完毕后，当前进程一定会被`abort`。源文件`test_aco_tutorial_5.c`中描述了如何自定义protector。
 
-The example `test_aco_tutorial_6.c` is a simple coroutine scheduler. And the last example, namely `test_aco_tutorial_7.c`, is the same scheduler using `aco_yield_to`.
+源文件`test_aco_tutorial_6.c`中示范了一个简单的协程调度器的实例。
 
 # API
 
-It would be very helpful to read the corresponding API implementation in the source code simultaneously when you are reading the following API description of libaco since the source code is pretty clear and easy to understand. And it is also recommended to read all the [tutorials](#tutorials) before reading the API document.
+在阅读下面的API文档时，建议也可以同时阅读对应源码中的实现，因为源码非常的清晰易读。同时，在阅读API文档之前，推荐先阅读[教程](#tutorials)部分。
 
-It is strongly recommended to read the [Best Practice](#best-practice) part before starting to write the real application of libaco (in addition to describing how to truly release libaco's extreme performance in your application, there is also a notice about the programming of libaco).
+另外，在开始写libaco的应用之前，强烈建议先进行阅读[最佳实践](#best-practice)章节，此章节中除了描述如何应用libaco以让其性能发挥到极致，也描述了一些libaco编程时的注意事项。
 
-Note: The version control of libaco follows the spec: [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html). So the API in the following list have the compatibility guarantee. (Please note that there is no such guarantee for the API no in the list.)
+注意：libaco的版本控制遵从[Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html)标准。所以，下面列出的所有API均有标准中所描述的兼容性保证（请注意，没有在下面API列表中的函数调用则没有如此的保证）。
 
 ## aco_thread_init
 
@@ -283,14 +268,14 @@ typedef void (*aco_cofuncp_t)(void);
 void aco_thread_init(aco_cofuncp_t last_word_co_fp);
 ```
 
-Initializes the libaco environment in the current thread.
+在当前运行线程中初始化libaco的执行环境。
 
-It will store the current control words of FPU and MXCSR into a thread-local global variable. 
+此API会将当前FPU与MXCSR的控制字保存到一个TLS全局变量中。
 
-* If the global macro `ACO_CONFIG_SHARE_FPU_MXCSR_ENV` is not defined, the saved control words would be used as a reference value to set up the control words of the new co's FPU and MXCSR (in `aco_create`) and each co would maintain its own copy of FPU and MXCSR control words during later context switching.
-* If the global macro `ACO_CONFIG_SHARE_FPU_MXCSR_ENV` is defined, then all the co shares the same control words of FPU and MXCSR. You may refer the "[Build and Test](#build-and-test)" part of this document for more information about this.
+* 如果全局C宏 `ACO_CONFIG_SHARE_FPU_MXCSR_ENV` 没有被定义，保存的控制字接下来会被用来初始化新协程（`aco_create`）的FPU与MXCSR的控制字，然后每一个协程都将会在以后的协程上下文切换中独立维护这一份属于自己的FPU与MXCSR的控制字配置。
+* 如果全局C宏 `ACO_CONFIG_SHARE_FPU_MXCSR_ENV` 被定义了，所有的协程将会共享同一份FPU与MXCSR的控制字配置。如果在这方面想了解更多，请查阅 "[Build and Test](#build-and-test)" 部分。
 
-And as it said in the `test_aco_tutorial_5.c` of the "[Tutorials](#tutorials)" part, when the 1st argument `last_word_co_fp` is not NULL then the function pointed by `last_word_co_fp` will substitute the default protector to do some "last words" stuff about the offending co before the process is aborted. In such last word function, you could use `aco_get_co` to get the pointer of the offending co. For more information, you may read `test_aco_tutorial_5.c`.
+就像在 "[Tutorials](#tutorials)" 中关于 `test_aco_tutorial_5.c` 部分所陈述的那样，API的第一个入参`last_word_co_fp`为用户自定义的 "last words" 函数指针, 如果它的值非NULL，将会取代默认的protector handler（在进程abort之前做一些 "last words" 相关的事情）。在这样的 "last word" 函数中，用户可以调用API `aco_get_co` 以获得当前协程的指针。可以通过阅读源文件`test_aco_tutorial_5.c`以获得与此相关的更多信息。
 
 ## aco_share_stack_new
 
@@ -298,7 +283,7 @@ And as it said in the `test_aco_tutorial_5.c` of the "[Tutorials](#tutorials)" p
 aco_share_stack_t* aco_share_stack_new(size_t sz);
 ```
 
-Equal to `aco_share_stack_new2(sz, 1)`.
+等价于调用`aco_share_stack_new2(sz, 1)`。
 
 ## aco_share_stack_new2
 
@@ -306,19 +291,19 @@ Equal to `aco_share_stack_new2(sz, 1)`.
 aco_share_stack_t* aco_share_stack_new2(size_t sz, char guard_page_enabled);
 ```
 
-Creates a new share stack with a advisory memory size of `sz` in bytes and may have a guard page (read-only) for the detection of stack overflow which is depending on the 2nd argument `guard_page_enabled`.
+创建一个新的执行栈，入参`sz`是对要创建执行栈的大小的一个建议性字节值，入参`guard_page_enabled`决定了要创建的执行栈是否会拥有一个只读的 "guard page" （可以用来检测执行栈的溢出）。
 
-To use the default size value (2MB) if the 1st argument `sz` equals 0. After some computation of alignment and reserve, this function will ensure the final valid length of the share stack in return:
+当第一入参`sz`为0时，表示选择使用默认的大小值（2MB）。经过一系列关于内存对齐和保留的运算后，该API保证最终创建出的执行栈满足下列所有条件：
 
 * `final_valid_sz >= 4096`
 * `final_valid_sz >= sz`
 * `final_valid_sz % page_size == 0 if the guard_page_enabled != 0`
 
-And as close to the value of `sz` as possible.
+并且尽可能的接近入参`sz`的值。
 
-When the value of the 2nd argument `guard_page_enabled` is 1, the share stack in return would have one read-only guard page for the detection of stack overflow while a value 0 of `guard_page_enabled` means without such guard page.
+当第二入参`guard_page_enabled`的值为1时，创建的执行栈将会拥有一个只读的用来检测执行栈溢出的 "guard page"，为0时则不会拥有这样的 "guard page" 。
 
-This function will always return a valid share stack.
+此函数总是成功地返回一个可用的执行栈。
 
 ## aco_share_stack_destroy
 
@@ -326,9 +311,9 @@ This function will always return a valid share stack.
 void aco_share_stack_destroy(aco_share_stack_t* sstk);
 ```
 
-Destory the share stack `sstk`.
+销毁执行栈`sstk`。
 
-Be sure that all the co whose share stack is `sstk` is already destroyed when you destroy the `sstk`.
+在销毁执行栈`sstk`之前，请确定所有使用这个执行栈的协程已经全部被销毁。
 
 ## aco_create
 
@@ -338,19 +323,19 @@ aco_t* aco_create(aco_t* main_co，aco_share_stack_t* share_stack,
         size_t save_stack_sz, aco_cofuncp_t co_fp, void* arg);
 ```
 
-Create a new co.
+创建一个新的协程。
 
-If it is a main_co you want to create, just call: `aco_create(NULL, NULL, 0, NULL, NULL)`. Main co is a special standalone coroutine whose share stack is the default thread stack. In the thread, main co is the coroutine who should be created and started to execute before all the other non-main coroutine does.
+如果想创建一个main co，直接调用：`aco_create(NULL, NULL, 0, NULL, NULL)`。Main co是一个特殊的standalone coroutine，它的执行栈是当前线程默认的执行栈。在一个线程中，main co 是被第一个创建并且是在所有其他non-main coroutine之前就已经开始运行了的协程。
 
-Otherwise it is a non-main co you want to create:
+如果想使用此API创建一个non-main co：
 
-* The 1st argument `main_co` is the main co the co will `aco_yield` to in the future context switching. `main_co` must not be NULL;
-* The 2nd argument `share_stack` is the address of a share stack which the non-main co you want to create will use as its executing stack in the future. `share_stack` must not be NULL;
-* The 3rd argument `save_stack_sz` specifies the init size of the private save stack of this co. The unit is in bytes. A value of 0 means to use the default size 64 bytes. Since automatical resizing would happen when the private save stack is not big enough to hold the executing stack of the co when it has to yield the share stack it is occupying to another co, you usually should not worry about the value of `sz` at all. But it will bring some performance impact to the memory allocator when a huge amount (say 10,000,000) of the co resizes their private save stack continuously, so it is very wise and highly recommended to set the `save_stack_sz` with a value equal to the maximum value of `co->save_stack.max_cpsz` when the co is running (You may refer to the "[Best Practice](#best-practice)" part of this document for more information about such optimization);
-* The 4th argument `co_fp` is the entry function pointer of the co. `co_fp` must not be NULL;
-* The last argument `arg` is a pointer value and will set to `co->arg` of the co to create. It could be used as a input argument for the co.
+* 第一个入参`main_co`指向当前线程中的main co，创建出的non-main co以后在调用API `aco_yield`时将会将执行流程转交给入参`main_co`指向的main co，入参`main co`必然非NULL；
+* 第二个入参`share_stack`指向要创建的non-main co以后要使用的执行栈。`share_stack` 必然非NULL。
+* 第三个入参`save_stack_sz`指定要创建的non-main co的私有保存栈的初始大小，其单位为字节。值0表示使用默认的初始大小64字节。由于在以后的non-main co执行过程中，如果其私有保存栈不够大时将会进行自动地大小调整，所以一般情况下，用户不需要担心它的值。但是，如果有巨量的协程(比如一千万个)相继的进行大小调整，将会给内存分配器带来一些性能冲击，所以一个更加明智的选择是，给入参`save_stack_sz`赋予一个协程运行期间保存栈需要的最大值（即`co->save_stack.max_cpsz`的值），查阅 "[最佳实践](#best-practice)" 部分以获得与此相关的更多优化信息。
+* 第四个入参`co_fp`是要创建non-main co的入口函数指针。`co_fp`必然非NULL。
+* 最后一个入参`arg`为一个指针值，将会设置为要创建non-main co的`co->arg`的值，`co->arg`一般用来作为协程的输入参数。
 
-This function will always return a valid co. And we name the state of the co in return as "init" if it is a non-main co you want to create.
+此API将会永远地成功返回一个可用的协程。同时，我们定义`aco_create`返回的non-main co处于 "init" 状态。
 
 ## aco_resume
 
@@ -358,13 +343,13 @@ This function will always return a valid co. And we name the state of the co in 
 void aco_resume(aco_t* co);
 ```
 
-Yield from the caller main co and to start or continue the execution of `co`.
+从调用者处Yield出来并开始或者继续协程`co`的执行。
 
-The caller of this function must be a main co and must be `co->main_co`. And the 1st argument `co` must be a non-main co.
+此API的调用者必须是main co并且必须是`co->main_co`，入参`co`必须是non-main co。
 
-The first time you resume a `co`, it starts running the function pointing by `co->fp`. If `co` has already been yielded, `aco_resume` restarts it and continues the execution.
+第一次Resume协程`co`时，将会开始`co`的执行（函数指针`co->fp`指向的函数）。如果协程`co`已经Yielded，`aco_resume`将会继续`co`的执行。
 
-After the call of `aco_resume`, we name the state of the caller — main co as "yielded". 
+在API `aco_resume`被调用之后，我们定义调用者 -- main co 的状态为 "yielded" 。
 
 ## aco_yield
 
@@ -372,21 +357,11 @@ After the call of `aco_resume`, we name the state of the caller — main co as "
 void aco_yield();
 ```
 
-Yield the execution of `co` and resume `co->main_co`. The caller of this function must be a non-main co. And `co->main_co` must not be NULL.
+从调用者`co`处Yield出来并且Resume `co->main_co`的执行。
 
-After the call of `aco_yield`, we name the state of the caller — `co` as "yielded".
+此API的调用者必须为non-main co，`co->main_co`必须非NULL。
 
-## aco_yield_to
-
-```c
-void aco_yield_to(aco_t* resume_co);
-```
-
-Yield the execution of `co` and resume `resume_co`. The caller of this function must be a non-main co (i.e. `co->main_co` is not NULL). If `co` is different of `resume_co`, they cannot share the same stack and `co->main_co` and `resume_co->main_co` must be equal.
-
-After the call of `aco_yield_to`, we name the state of the caller — `co` as "yielded".
-
-`aco_yield_to()` is useful when a non-main co wants to yield to another co with a single context switch. Without `aco_yield_to()`, one has to go through two switches: one switch back to main co and another switch to the desired non-main co.
+在API `aco_yield`被调用之后，我们定义`co`的状态为 "yielded" 。
 
 ## aco_get_co
 
@@ -394,7 +369,7 @@ After the call of `aco_yield_to`, we name the state of the caller — `co` as "y
 aco_t* aco_get_co();
 ```
 
-Return the pointer of the current non-main co. The caller of this function must be a non-main co.
+返回当前non-main co的指针。此API的调用者必须是non-main co。
 
 ## aco_get_arg
 
@@ -402,7 +377,7 @@ Return the pointer of the current non-main co. The caller of this function must 
 void* aco_get_arg();
 ```
 
-Equal to `(aco_get_co()->arg)`. And also, the caller of this function must be a non-main co.
+等价于`(aco_get_co()->arg)`。同样的，此API的调用者必须是non-main co。
 
 ## aco_exit
 
@@ -410,7 +385,7 @@ Equal to `(aco_get_co()->arg)`. And also, the caller of this function must be a 
 void aco_exit();
 ```
 
-In addition do the same as `aco_yield()`, `aco_exit()` also set `co->is_end` to 1 thus to mark the `co` at the status of "end".
+除了与`aco_yield()`一样的功能之外，`aco_exit()`会另外设置`co->is_end`为1，以标志`co`的状态为 "end" 。
 
 ## aco_destroy
 
@@ -418,7 +393,7 @@ In addition do the same as `aco_yield()`, `aco_exit()` also set `co->is_end` to 
 void aco_destroy(aco_t* co);
 ```
 
-Destroy the `co`. The argument `co` must not be NULL. The private save stack would also been destroyed if the `co` is a non-main co.
+销毁协程`co`。入参`co`必须非NULL。如果`co`是一个non-main co，此API也会同时销毁`co`的私有保存栈。
 
 ## MACROS
 
@@ -427,10 +402,10 @@ Destroy the `co`. The argument `co` must not be NULL. The private save stack wou
 ```c
 #define ACO_VERSION_MAJOR 1
 #define ACO_VERSION_MINOR 2
-#define ACO_VERSION_PATCH 4
+#define ACO_VERSION_PATCH 2
 ```
 
-These 3 macros are defined in the header `aco.h` and the value of them follows the spec: [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
+这三个关于libaco版本值的宏定义在头文件`aco.h`中，它们的值遵守标准：[Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html)。
 
 ### aco_assert_override.h
 
@@ -450,9 +425,9 @@ These 3 macros are defined in the header `aco.h` and the value of them follows t
 #define assertalloc_ptr(ptr)    aco_assertalloc_ptr(ptr)
 ```
 
-You could choose to include the header `"aco_assert_override.h"` to override the default C "[assert](http://man7.org/linux/man-pages/man3/assert.3.html)" in the libaco application like [test_aco_synopsis.c](test_aco_synopsis.c) does (this header including should be at the last of the include directives list in the source file because the C "[assert](http://man7.org/linux/man-pages/man3/assert.3.html)" is a C macro definition too) and define the 5 other macros in the above. Please do not include this header in the application source file if you want to use the default C "[assert](http://man7.org/linux/man-pages/man3/assert.3.html)".
+像源文件[test_aco_synopsis.c](test_aco_synopsis.c) 所做的那样，用户可以选择在自己的应用源码中include头文件`"aco_assert_override.h"`来替换掉C默认的 "[assert](http://man7.org/linux/man-pages/man3/assert.3.html)" 以及定义除了`assert`之外的其它五个宏（如上所示）。因为C的 "[assert](http://man7.org/linux/man-pages/man3/assert.3.html)" 也是一个宏定义，所以在include头文件 `"aco_assert_override.h"` 时，应该将它放到源文件中所有include指令中的最后一个。如果在一个源文件中，用户想要在某个源文件中使用默认的C "[assert](http://man7.org/linux/man-pages/man3/assert.3.html)"，请不要在其中include这个头文件。
 
-For more details you may refer to the source file [aco_assert_override.h](aco_assert_override.h).
+阅读源文件[aco_assert_override.h](aco_assert_override.h)以获得关于此的更多信息。
 
 # Benchmark
 
@@ -462,11 +437,11 @@ Machine: [c5d.large on AWS](https://aws.amazon.com/cn/blogs/aws/now-available-co
 
 OS: RHEL-7.5 (Red Hat Enterprise Linux 7.5).
 
-Here is a brief summary of the benchmark part:
+下面是关于性能测试部分的一个摘要描述：
 
-* One time of the context switching between coroutines takes only about **10.29 ns** (in the case of standalone stack, where x87 and mxcsr control words are shared between coroutines);
-* One time of the context switching between coroutines takes only about **10.38 ns** (in the case of standalone stack, where each coroutine maintains their own x87 and mxcsr control words);
-* It is extremely memory efficient: it only costs **2.8 GB** of physical memory to run **10,000,000** coroutines simultaneously (with tcmalloc, where each coroutine has a **120 bytes** copy-stack size configuration).
+* 一次协程间上下文切换仅耗时 **10.29 ns** （协程拥有独立的运行栈，并且协程间共享FPU与MXCSR控制字配置的情况下）；
+* 一次协程间上下文切换仅耗时 **10.38 ns** （协程拥有独立的运行栈,并且各协程均维护一份属于各自的FPU与MXCSR控制字配置的情况下）；
+* 极致的内存使用率：一千万个协程并发执行仅消耗2.8GB的物理内存（tcmalloc，每一个协程使用120B的复制栈）。
 
 ```
 $ LD_PRELOAD=/usr/lib64/libtcmalloc_minimal.so.4 ./test_aco_benchmark..no_valgrind.shareFPUenv
@@ -696,36 +671,36 @@ aco_destroy                                             100000     0.038 s      
 
 # Proof of Correctness
 
-It is essential to be very familiar with the standard of [Sys V ABI of intel386 and x86-64](https://github.com/hjl-tools/x86-psABI/wiki/X86-psABI) before you start to implement or prove a coroutine library.
+首先，在开始实现或者证明一个协程库之前，必备的条件是要对[Sys V ABI of intel386 and x86-64](https://github.com/hjl-tools/x86-psABI/wiki/X86-psABI)标准非常的熟悉，以及一些基础的汇编知识。
 
-The proof below has no direct description about the IP (instruction pointer), SP (stack pointer) and the saving/restoring between the private save stack and the share stack, since these things are pretty trivial and easy to understand when they are compared with the ABI constraints stuff.
+接下来的证明中并没有包含关于IP（指令指针），SP（堆栈指针）和协程的私有保存栈与共享执行栈之间的保存与恢复的直接描述，因为相比于ABI约束的保证，这些东西是相当微不足道且容易实现和理解的。
 
 ## Running Model
 
-In the OS thread, the main coroutine `main_co` is the coroutine who should be created and started to execute first, before all the other non-main coroutines do.
+在一个OS线程中，主协程`main_co`是被第一个创建并且是在所有其他non-main coroutine之前就已经开始运行了的协程。
 
-The next diagram is a simple example of the context switching between main_co and co.
+下图是协程main co与co之间上下文切换的简单图示。
 
-In this proof, we just assume that we are under Sys V ABI of intel386 since there is no fundamental differences between the Sys V ABI of intel386 and x86-64. We also assume that none of the code would change the control words of FPU and MXCSR.
+在这个证明中，我们假定我们的二进制程序要满足Sys V ABI intel386标准，因为Sys V ABI intel386与Sys V ABI x86-64之间没有根本的不同。为了简化描述，我们还假定二进制程序中没有会更改FPU或MXCSR控制字的代码存在。
 
 ![proof_0](img/proof_0.png)
 
-The next diagram is actually a symmetric coroutine's running model which has an unlimited number of non-main co-s and one main co. This is fine because the asymmetric coroutine is just a special case of the symmetric coroutine. To prove the correctness of the symmetric coroutine is a little more challenging than of the asymmetric coroutine and thus more fun it would become. (libaco only implemented the API of asymmetric coroutine currently because the semantic meaning of the asymmetric coroutine API is far more easy to understand and to use than the symmetric coroutine does.)
+下图实际上是对称协程的运行模型图（拥有不限量个non-main co和一个main co）。因为非对称协程仅仅是对称协程的一种特殊情况，所以我们如果证明了对称协程的正确性也就等于证明了非对称协程的正确性，如此会多些挑战性同时也会多些乐趣（libaco当前只实现了非对称协程的API，因为非对称协程的API语义远远比对称协程的API语义更容易理解和掌控）。
 
 ![proof_1](img/proof_1.png)
 
-Since the main co is the 1st coroutine starts to run, the 1st context switching in this OS thread must be in the form of `acosw(main_co, co)` where the 2nd argument `co` is a non-main co.
+因为main co是在当前OS线程中第一个开始运行的协程，那么第一次协程间上下文切换一定是以`acosw(main_co, co)`这种形式存在的（这里，`acosw`的第二个入参`co`是一个non-main co）。
 
 ## Mathematical Induction
 
-It is easy to prove that there only exists two kinds of state transfer in the above diagram:
+容易证明，在上图中只存在两类协程间的状态迁移：
 
 * yielded state co → init state co
 * yielded state co → yielded state co
 
-To prove the correctness of `void* acosw(aco_t* from_co, aco_t* to_co)` implementation is equivalent to prove all the co constantly comply to the constraints of Sys V ABI before and after the call of `acosw`. We assume that the other part of binary code (except `acosw`) in the co had already comply to the ABI (they are normally generated by the compiler correctly).
+要证明协程上下文切换函数`void* acosw(aco_t* from_co, aco_t* to_co)`的正确性，就等于要证明所有的协程在调用`acosw`前后都一直满足Sys V ABI规范的约束。我们假定协程中除了`acosw`之外的所有二进制均已经满足了ABI规范（它们一般是由编译器正确地生成的）。
 
-Here is a summary of the registers' constraints in the Function Calling Convention of Intel386 Sys V ABI:
+下面是Sys V ABI Intel386函数调用约定中寄存器用法的总结：
 
 ```
 Registers' usage in the calling convention of the Intel386 System V ABI:
@@ -782,7 +757,7 @@ Registers' usage in the calling convention of the Intel386 System V ABI:
                 like `fesetenv`)
 ```
 
-(For Intel386, the register usage is defined in the "P13 - Table 2.3: Register Usage" of [Sys V ABI Intel386 V1.1](https://github.com/hjl-tools/x86-psABI/wiki/X86-psABI), and for AMD64 is in "P23 - Figure 3.4: Register Usage" of [Sys V ABI AMD64 V1.0](https://github.com/hjl-tools/x86-psABI/wiki/X86-psABI).)
+（对于Intel386，寄存器的用途定义在[Sys V ABI Intel386 V1.1](https://github.com/hjl-tools/x86-psABI/wiki/X86-psABI)的 "P13 - Table 2.3: Register Usage" 表中，对于AMD64则定义在[Sys V ABI AMD64 V1.0](https://github.com/hjl-tools/x86-psABI/wiki/X86-psABI)的 "P23 - Figure 3.4: Register Usage" 的图中。）
 
 **Proof:**
 
@@ -790,11 +765,11 @@ Registers' usage in the calling convention of the Intel386 System V ABI:
 
 ![proof_2](img/proof_2.png)
 
-The diagram above is for the 1st case: "yielded state co -> init state co".
+上图详细地描绘了第一类状态迁移的过程： "yielded state co -> init state co" .
 
-Constraints: C 1.0, 1.1, 1.2, 1.5 (*satisfied* ✓ )
+约束: C 1.0, 1.1, 1.2, 1.5 (*满足* ✓ )
 
-The scratch registers below can hold any value at the entry of a function:
+下面列出的Scratch Registers在一个函数的入口点时其值可以为任意值：
 
 ```
 EAX,ECX,EDX
@@ -802,27 +777,27 @@ XMM*,YMM*,MM*,K*...
 status bits of EFLAGS,FPU,MXCSR
 ```
 
-Constraints: C 1.3, 1.4 (*satisfied* ✓ )
+约束: C 1.3, 1.4 (*满足* ✓ )
 
-Since the stack of FPU must already be empty and the DF must already be 0 before `acosw(co, to_co)` was called (the binary code of co is already complied to the ABI), the constraint 1.3 and 1.4 is complied by `acosw`.
+由于在`acosw`被调用之前，FPU栈必然已空并且DF必然已为0（因为协程co的二进制代码已经满足ABI规范），所以，`acosw`满足约束C1.3和1.4。
 
-Constraints: C 2.0, 2.1, 2.2 (*satisfied* ✓ )
+约束: C 2.0, 2.1, 2.2 (*满足* ✓ )
 
-C 2.0 & 2.1 is already satisfied. Since we already assumed that nobody will change the control words of FPU and MXCSR, C 2.2 is satisfied too.
+约束C2.0和2.1已经被满足。由于我们已假定FPU与MXCSR的控制字在程序运行过程中不会被更改，所以约束C2.2也已经被`acosw`满足。
 
 2. yielded state co -> yielded state co:
 
 ![proof_3](img/proof_3.png)
 
-The diagram above is for the 2nd case: yielded state co -> yielded state co.
+上图详细地描绘了第二类状态迁移的过程： yielded state co -> yielded state co.
 
-Constraints: C 1.0 (*satisfied* ✓ )
+约束: C 1.0 (*满足* ✓ )
 
-EAX already holding the return value when `acosw` returns back to to_co (resume).
+很显然，当`acosw`返回到to_co时EAX中已经保存了预期的返回值。
 
-Constraints: C 1.1, 1.2, 1.5 (*satisfied* ✓ )
+约束: C 1.1, 1.2, 1.5 (*满足* ✓ )
 
-The scratch registers below can hold any value at the entry of a function and after the return of `acosw`:
+下面列出的Scratch Registers在一个函数的入口点时以及在`acosw`返回后其值皆可为任意值：
 
 ```
 ECX,EDX
@@ -830,27 +805,27 @@ XMM*,YMM*,MM*,K*...
 status bits of EFLAGS,FPU,MXCSR
 ```
 
-Constraints: C 1.3, 1.4 (*satisfied* ✓ )
+约束: C 1.3, 1.4 (*满足* ✓ )
 
-Since the stack of FPU must already be empty and the DF must already be 0 before `acosw(co, to_co)` was called (the binary code of co is already complied to the ABI), the constraint 1.3 and 1.4 is complied by `acosw`.
+由于在`acosw`被调用之前，FPU栈必然已空并且DF必然已为0（因为协程co的二进制代码已经满足ABI规范），所以，`acosw`满足约束C1.3和1.4。
 
-Constraints: C 2.0, 2.1, 2.2 (*satisfied* ✓ )
+约束: C 2.0, 2.1, 2.2 (*满足* ✓ )
 
-C 2.0 & 2.1 is satisfied because there is saving & restoring of the callee saved registers when `acosw` been called/returned. Since we already assumed that nobody will change the control words of FPU and MXCSR, C 2.2 is satisfied too.
+从`acosw`调用者的角度来看，由于在`acosw`被调用（或返回）时，所有的callee saved registers都做了对应的保存（或恢复）工作，则约束C2.0与2.1被`acosw`满足。由于我们已假定FPU与MXCSR的控制字在程序运行过程中不会被更改，所以约束C2.2也已经被`acosw`满足。
 
 3. Mathematical induction:
 
-The 1st `acosw` in the thread must be the 1st case: yielded state co -> init state co, and all the next `acosw` must be one of the 2 case above. Sequentially, we could prove that "all the co constantly comply to the constraints of Sys V ABI before and after the call of `acosw`". Thus, the proof is finished.
+显然，在当前OS线程中，第一次`acosw`必然属于第一类状态迁移：yielded state co -> init state co，并且接下来的所有`acosw`必然属于这两类状态迁移的其中一类。顺序地用上面得到两个结论依次证明，最终得到“所有的协程在调用`acosw`前后都一直满足Sys V ABI规范的约束”结论。如此，证明结束。
 
 ## Miscellaneous
 
 ### Red Zone
 
-There is a new thing called [red zone](https://en.wikipedia.org/wiki/Red_zone_(computing)) in System V ABI x86-64:
+在System V ABI x86-64中描述[red zone](https://en.wikipedia.org/wiki/Red_zone_(computing))的概念：
 
 > The 128-byte area beyond the location pointed to by %rsp is considered to be reserved and shall not be modified by signal or interrupt handlers. Therefore, functions may use this area for temporary data that is not needed across function calls. In particular, leaf functions may use this area for their entire stack frame, rather than adjusting the stack pointer in the prologue and epilogue. This area is known as the red zone.
 
-Since the red zone is "not preserved by the callee", we just do not care about it at all in the context switching between coroutines (because the `acosw` is a leaf function).
+由于red zone "not preserved by the callee" ，所以我们在协程的上下文切换的实现中无需考虑它（因为`acosw`是一个叶子函数，即leaf function）。
 
 ### Stack Pointer
 
@@ -862,19 +837,19 @@ Since the red zone is "not preserved by the callee", we just do not care about i
 >
 > — Sys V ABI AMD64 Version 1.0:3.2.2 The Stack Frame
 
-Here is a [bug example](https://github.com/Tencent/libco/blob/v1.0/coctx_swap.S#L27) in Tencent's libco. The ABI states that the `(E|R)SP` should always point to the end of the latest allocated stack frame. But in file [coctx_swap.S](https://github.com/Tencent/libco/blob/v1.0/coctx_swap.S#L27) of libco, the `(E|R)SP` had been used to address the memory on the heap.
+这是腾讯libco中的一个[bug](https://github.com/Tencent/libco/blob/v1.0/coctx_swap.S#L27)。ABI规范中规定用户空间程序的栈指针必须时刻指到运行栈的[栈顶](https://zh.wikipedia.org/wiki/%E5%A0%86%E6%A0%88#%E6%93%8D%E4%BD%9C)，而[coctx_swap.S](https://github.com/Tencent/libco/blob/v1.0/coctx_swap.S#L27)中却使用栈指针直接对位于堆中的数据结构进行寻址内存操作，这违反了ABI约定。
 
 >**By default, the signal handler  is invoked  on  the normal process stack.**  It is possible to arrange that the signal handler uses an alternate stack; see sigalstack(2)  for  a discussion of how to do this and when it might be useful.
 >
 >— man 7 signal : Signal dispositions
 
-Terrible things may happen if the `(E|R)SP`  is pointing to the data structure on the heap when signal comes. (Using the `breakpoint` and `signal` commands of gdb could produce such bug conveniently. Although by using `sigalstack` to change the default signal stack could alleviate the problem, but still, that kind of usage of `(E|R)SP` still violates the ABI.)
+当coctx_swap正在用栈指针对位于堆中的数据结构进行寻址内存操作时，若此时执行线程收到了一个信号，接着内核抢占了该执行线程并开始准备接下来用户空间线程的信号处理执行环境，由于在默认情况下，内核将会选择主栈作为信号处理函数的执行栈，但此时栈已经被指向了堆中（用户空间的程序违反ABI约定在先），那么信号处理函数的执行栈就会被错误的放置到堆中，这样，堆中的数据结构在接下来就极有可能会被破坏(更详细的bug复现请参见此[issue](https://github.com/Tencent/libco/issues/90))。
 
 # Best Practice
 
-In summary, if you want to gain the ultra performance of libaco, just keep the stack usage of the non-standalone non-main co at the point of calling `aco_yield` as small as possible. And be very careful if you want to pass the address of a local variable from one co to another co since the local variable is usually on the **share** stack. Allocating this kind of variables from the heap is always the wiser choice.
+总的来说，如果你想把libaco的性能发挥到极致，一定要保证 "non-standalone non-main co" 在调用`aco_yield`时的执行栈使用尽可能的小。另外，当你想把一个协程的局部变量的地址传递到另一个协程时一定要非常小心，因为如果这个变量是在共享栈上时，将可能会发生内存数据混乱，因此，总是从堆中分配需要在协程间共享的内存是一个非常明智的选择。
 
-In detail, there are 5 tips:
+详细地说，有五点建议：
 
 ```
        co_fp 
@@ -886,11 +861,13 @@ In detail, there are 5 tips:
 yield  f3     f5
 ```
 
-1. The stack usage of main co has no direct influence to the performance of context switching between coroutines (since it has a standalone execution stack);
-2. The stack usage of standalone non-main co has no direct influence to the performance of context switching between coroutines. But a huge amount of standalone non-main co would cost too much of virtual memory (due to the standalone stack), so it is not recommended to create huge amount of standalone non-main co in one thread;
-3. The stack usage of non-standalone (share stack with other coroutines) non-main co when it is been yielded (i.e. call `aco_yield` to yield back to main co) has a big impact to the performance of context switching between coroutines, as already indicated by the benchmark results. In the diagram above, the stack usage of function f2, f3, f4 and f5 has no direct influence over the context switching performance since there are no `aco_yield` when they are executing, whereas the stack usage of co_fp and f1 dominates the value of `co->save_stack.max_cpsz` and has a big influence over the context switching performance.
+1. Main co的执行栈使用大小对协程间上下文切换的性能没有直接影响（因为main co独占了线程的默认执行栈）；
 
-The key to keeping the stack usage of a function as low as possible is to allocate the local variables (especially the big ones) on the heap and manage their lifecycle manually instead of allocating them on the stack by default. The `-fstack-usage` option of gcc is very helpful about this.
+2. Standalone non-main co的执行栈使用大小对协程间上下文切换的性能没有直接影响（因为它独占了一个执行栈）。但是创建海量的standalone non-main co将会消耗海量的虚拟内存（因为海量执行栈的创建），因此，应用中并不推荐在一个线程中创建海量的standalone non-main co；
+
+3. Non-standalone non-main co（与其他协程共享执行栈的非主协程）在调用`aco_yield`时执行栈的使用大小将会对协程间上下文切换的性能产生直接的影响，性能测试部分已经清楚的展示了这一点。在上图中，函数f2，f3，f4与f5的栈使用量对上下文切换的性能没有影响，这是因为在它们执行的过程中并没有`aco_yield`函数的来中断它们。然而，函数co_fp与f1的栈使用量之和将会决定`co->save_stack.max_cpsz`（协程运行期间私有保存栈的最大保存大小）的值，同时会对上下文切换的性能产生直接的影响；
+
+让一个函数拥有尽可能低的栈使用量的关键是尽可能地从堆中分配局部变量（尤其是占用内存较大的变量）并手动地管理它们的生命周期（malloc/free），而非默认地从堆栈上分配和自动释放它们。C编译器gcc的选项`-fstack-usage`对此非常有用。
 
 ```c
 int* gl_ptr;
@@ -913,7 +890,7 @@ void co_fp1() {
 }
 ```
 
-4. In the above code snippet, we assume that co_fp0 & co_fp1 shares the same share stack (they are both non-main co) and the running sequence of them is "co_fp0 -> co_fp1 -> co_fp0". Since they are sharing the same stack, the address holding in `gl_ptr` in co_fp1 (line 16) has totally different semantics with the `gl_ptr` in line 7 of co_fp0, and that kind of code would probably corrupt the execution stack of co_fp1. But the line 11 is fine because variable `ct` and function `inc_p` are in the same coroutine context. Allocating that kind of variables (need to share with other coroutines) on the heap would simply solve such problems:
+4. 在上面的代码片段中，我们假定协程co_fp0与co_fp1共享同一个执行栈，它们均是non-main co，它们的执行顺序为 "co_fp0 -> co_fp1 -> co_fp0" 。因为它们共享同一个执行栈，在代码第16行`gl_ptr`中的指针值与代码第7行`gl_ptr`中的指针值二者的语义是不同的，这样的用法很可能会破坏协程co_fp1的执行栈。而代码第11行则是正确的，因为此时局部变量`ct`与函数`inc_p`的执行是在同一个协程上下文中的。从堆中分配需要在协程间共享的内存能够很简单地解决这类问题：
 
 ```c
 int* gl_ptr;
@@ -944,7 +921,7 @@ void co_fp1() {
 
 New ideas are welcome!
 
-* Add a macro like `aco_mem_new` which is the combination of something like `p = malloc(sz); assertalloc_ptr(p)`.
+* Add a macro `aco_new` which is the combination of something like `p = malloc(sz); assertalloc_ptr(p)`.
 
 * Add a new API `aco_reset` to support the reusability of the coroutine objects.
 
@@ -953,19 +930,6 @@ New ideas are welcome!
 # CHANGES
 
 ```
-v1.2.4 Sun Jul 29 2018
-    Changed `asm` to `__asm__` in aco.h to support compiler's `--std=c99`
-    flag (Issue #16, proposed by Theo Schlossnagle @postwait).
-v1.2.3 Thu Jul 26 2018
-    Added support for MacOS;
-    Added support for shared library build of libaco (PR #10, proposed
-    by Theo Schlossnagle @postwait);
-    Added C macro ACO_REG_IDX_BP in aco.h (PR #15, proposed by
-    Theo Schlossnagle @postwait);
-    Added global C config macro ACO_USE_ASAN which could enable the
-    friendly support of address sanitizer (both gcc and clang) (PR #14,
-    proposed by Theo Schlossnagle @postwait);
-    Added README_zh.md.
 v1.2.2 Mon Jul 9 2018
     Added a new option `-o <no-m32|no-valgrind>` to make.sh;
     Correction about the value of macro ACO_VERSION_PATCH (issue #1 
@@ -993,7 +957,7 @@ v1.0   Sun Jul 1 2018
 
 # Donation
 
-I'm a full-time open source developer. Any amount of the donations will be highly appreciated and could bring me great encouragement.
+我是一位自由的全职开源项目开发者，任何数量的捐赠对我都将会是莫大的鼓励 ;-)
 
 * Paypal
 
