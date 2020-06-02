@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "aco_assert_override.h"
 
 void foo(int ct){
     printf(
@@ -30,9 +31,9 @@ void foo(int ct){
 void co_fp0()
 {
     aco_t* this_co = aco_get_co();
-    aco_assert(!aco_is_main_co(this_co));
-    aco_assert(this_co->fp == (void*)co_fp0);
-    aco_assert(this_co->is_end == 0);
+    assert(!aco_is_main_co(this_co));
+    assert(this_co->fp == (void*)co_fp0);
+    assert(this_co->is_end == 0);
     int ct = 0;
     while(ct < 6){
         foo(ct);
@@ -50,7 +51,7 @@ void co_fp0()
     // this is a demo shows how protector works in libaco (intended to abort)
     return;
     aco_exit();
-    aco_assert(0);
+    assert(0);
 }
 
 int main() {
@@ -66,27 +67,27 @@ int main() {
     aco_thread_init(NULL);
 
     aco_t* main_co = aco_create(NULL, NULL, 0, NULL, NULL);
-    aco_assertptr(main_co);
+    assertptr(main_co);
 
     aco_share_stack_t* sstk = aco_share_stack_new(0);
-    aco_assertptr(sstk);
+    assertptr(sstk);
 
     int co_ct_arg_point_to_me = 0;
     aco_t* co = aco_create(main_co, sstk, 0, co_fp0, &co_ct_arg_point_to_me);
-    aco_assertptr(co);
+    assertptr(co);
 
     int ct = 0;
     while(ct < 6){
-        aco_assert(co->is_end == 0);
+        assert(co->is_end == 0);
         aco_resume(co);
-        aco_assert(co_ct_arg_point_to_me == ct);
+        assert(co_ct_arg_point_to_me == ct);
 
         printf("main_co:%p\n", main_co);
         ct++;
     }
     aco_resume(co);
-    aco_assert(co_ct_arg_point_to_me == ct);
-    aco_assert(co->is_end);
+    assert(co_ct_arg_point_to_me == ct);
+    assert(co->is_end);
 
     printf("main_co:%p\n", main_co);
 

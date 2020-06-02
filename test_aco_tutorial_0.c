@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "aco_assert_override.h"
 
 void co_fp0() {
     // Get co->arg. The caller of `aco_get_arg()` must be a non-main co.
@@ -78,20 +79,20 @@ int main() {
 
     int ct = 0;
     while(ct < 6){
-        aco_assert(co->is_end == 0);
+        assert(co->is_end == 0);
         // Start or continue the execution of `co`. The caller of this function
         // must be main_co.
         aco_resume(co);
         // Check whether the co has completed the job it promised.
-        aco_assert(co_ct_arg_point_to_me == ct);
+        assert(co_ct_arg_point_to_me == ct);
         printf("main_co:%p\n", main_co);
         ct++;
     }
     aco_resume(co);
-    aco_assert(co_ct_arg_point_to_me == ct);
+    assert(co_ct_arg_point_to_me == ct);
     // The value of `co->is_end` must be `1` now since it just suspended 
     // itself by calling `aco_exit()`.
-    aco_assert(co->is_end);
+    assert(co->is_end);
 
     printf("main_co:%p\n", main_co);
 
