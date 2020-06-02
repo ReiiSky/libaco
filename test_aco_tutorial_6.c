@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "aco_assert_override.h"
 
 void co_fp0(){
     int ct = 0;
@@ -36,18 +37,18 @@ int main() {
     aco_thread_init(NULL);
 
     time_t seed_t = time(NULL);
-    aco_assert((time_t)-1 != seed_t);
+    assert((time_t)-1 != seed_t);
     srand(seed_t);
 
     size_t co_amount = 100;
 
     // create co
-    aco_assert(co_amount > 0);
+    assert(co_amount > 0);
     aco_t* main_co = aco_create(NULL, NULL, 0, NULL, NULL);
     aco_share_stack_t* sstk = aco_share_stack_new(0);
     // NOTE: size_t_safe_mul
     aco_t** coarray = (aco_t**) malloc(sizeof(void*) * co_amount);
-    aco_assertptr(coarray);
+    assertptr(coarray);
     memset(coarray, 0, sizeof(void*) * co_amount);
     size_t ct = 0;
     while(ct < co_amount){
@@ -103,7 +104,7 @@ int main() {
     END:
     ct = 0;
     while(ct < co_amount){
-        aco_assert(coarray[ct] == NULL);
+        assert(coarray[ct] == NULL);
         ct++;
     }
     aco_share_stack_destroy(sstk);
